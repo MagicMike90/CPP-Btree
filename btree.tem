@@ -1,0 +1,269 @@
+/*
+*** 
+ */
+
+#include <vector>
+#include <sstream>
+#include <algorithm>
+#include <string>
+
+template <typename T>
+btree<T>::btree(size_t ElementMaximum) : btree_(new BTree(ElementMaximum)), ElementMaximum_(ElementMaximum) {}
+
+template <typename T>
+btree<T>::btree(const btree<T>& original) : ElementMaximum_(original.ElementMaximum_) {
+    btree_ = treePtr(original.btree_->clone());        
+}
+
+template <typename T>
+btree<T>& btree<T>::operator=(const btree<T>& tree) {
+    if (this == &tree) return *this;
+    ElementMaximum_ = tree.ElementMaximum_;
+    btree_ = treePtr(tree.btree_->clone());        
+    return *this;
+}
+
+template <typename T>
+std::ostream& operator<<(std::ostream& os, const btree<T>& bt) {
+    vector<string> strings;
+    bt.btree_->outputBF(strings, 1);
+
+    std::ostream_iterator< string > output( cout, " " );
+    copy(strings.begin(), strings.end(), output);
+    return os;
+}
+
+template <typename T>
+typename btree<T>::iterator btree<T>::find(const T& ElementElement) {
+    return iterator(btree_->find(ElementElement));
+}
+
+template <typename T>
+typename btree<T>::const_iterator btree<T>::find(const T& ElementElement) const {
+    return const_iterator(btree_->find(ElementElement));
+}
+
+template <typename T>
+std::pair<typename btree<T>::iterator, bool> btree<T>::insert(const T& element) {
+    return btree_->insert(element);
+}
+
+template <typename T>
+btree<T>::~btree() {
+    btree_->recurClear();
+}
+
+// Element functions
+
+template <typename T>
+typename btree<T>::Element* btree<T>::Element::findNextUp() {
+    // look in Elements at this level
+    typename btree<T>::BTree::Elements_type& Elements = owner_->Elements_;
+
+    typename btree<T>::ElementPtr tmpElement(this);
+    typename btree<T>::BTree::Elements_iterator_type next_Element = Elements.upper_bound(tmpElement);
+
+    if (next_Element != Elements.end()) { // is there a next Element
+        if ((*next_Element)->left_.isNull()) { // if there is no tree on the left
+            return next_Element->n;
+        } else { 
+            // there is a tree on the left, return head()
+            return (*next_Element)->left_->head();
+        }
+    } else { // otherwise higher
+        if (!owner_->top_right_.isNull()) {
+            return owner_->top_right_.n;
+        } else if (!owner_->top_left_.isNull()) { // higher again
+            return owner_->top_left_->findNextUp();
+        } else {
+            return Constant::null;
+        }
+    }
+}
+
+template <typename T>
+typename btree<T>::Element* btree<T>::Element::findPrevUp() {
+    // look in owner Elements
+    typename btree<T>::BTree::Elements_type& Elements = owner_->Elements_;
+
+    typename btree<T>::ElementPtr tmpElement(this);
+    typename btree<T>::BTree::Elements_iterator_type next_Element = Elements.lower_bound(tmpElement);
+
+    if (next_Element != Elements.begin()) { // is there a next Element
+        --next_Element; // because lower_bound gives first ele not < 
+        if ((*next_Element)->right_.isNull()) { // if there is no tree on the right
+            return next_Element->n;
+        } else { 
+            // there is a tree on the right, return tail()
+            return (*next_Element)->right_->tail();
+        }
+    } else { // otherwise higher
+        if (!owner_->top_left_.isNull()) {
+            return owner_->top_left_.n;
+        } else if (!owner_->top_right_.isNull()) { // higher again
+            return owner_->top_right_->findPrevUp();
+        } else {
+            return Constant::null;
+        }
+    }
+}
+
+// BTree functions
+
+template <typename T>
+typename btree<T>::insert_res_type btree<T>::BTree::insert(const T& elem) {
+    ElementPtr new_Element(new Element(elem));
+    if (ElementElems() < ElementMaximum_) { // no need for branching
+        new_Element->owner_ = treePtr(this);
+        pair< typename btree<T>::BTree::Elements_type::iterator, bool> res = Elements_.insert(new_Element);
+
+        return typename btree<T>::insert_res_type(btree_iterator<T>(res.first->n), res.second);
+    } else { // put the elem in a sub-btree
+        // check if elem is already in this level
+        Elements_iterator_type found = Elements_.find(new_Element);
+        if (found != Elements_.end())
+            return typename btree<T>::insert_res_type(btree_iterator<T>(found->n), false);
+        // find pos of subtree to insert
+        Elements_iterator_type pos = Elements_.lower_bound(new_Element);
+        Elements_iterator_type top_right = pos;
+        Elements_iterator_type top_left = (top_right != Elements_.begin()) ? --pos : pos;
+
+        if ((top_right != Elements_.end() && (*top_right)->left_.isNull()) ||
+            (top_right == Elements_.end() && (*top_left)->right_.isNull())) { 
+            // The new sub-btree
+            treePtr subbt(new BTree(ElementMaximum_));
+            insert_res_type res = subbt->insert(elem);
+
+            // modify the left right pointers in Elements above
+            if (top_right != Elements_.end()) {
+                (*top_right)->left_ = subbt; // top right Element
+                subbt->top_right_ = *top_right;
+            }
+            
+            if (top_right != Elements_.begin()) {
+                (*top_left)->right_ = subbt; // top left Element
+                subbt->top_left_ = *top_left;
+            }
+            return res;
+        } else if (top_right != Elements_.end()) { 
+            // put in already existing subtree
+            return (*top_right)->left_->insert(elem);
+        } else {
+            // put in already existing subtree
+            return (*top_left)->right_->insert(elem);
+        }
+    }
+}
+
+template <typename T>
+typename btree<T>::Element* btree<T>::BTree::find(const T& elem) const {
+    ElementPtr tmp_Element(new Element(elem));
+
+    Elements_iterator_type res = Elements_.lower_bound(tmp_Element);
+    // check this level
+    if (res != Elements_.end() && (*res)->elem == elem) {
+        return (*res).n;
+    }
+    // check lower levels
+    if (res != Elements_.end()) {
+        if (!(*res)->left_.isNull())
+            return (*res)->left_->find(elem);
+    } else {
+        --res;
+        if (!(*res)->right_.isNull())
+            return (*res)->right_->find(elem);
+    }
+    return Constant::null;
+}
+
+template <typename T>
+typename btree<T>::Element* btree<T>::BTree::head() const {
+    if (Elements_.empty())
+        return Constant::null;
+    typename btree<T>::Element& firstElement = **Elements_.begin();
+    if (firstElement.left_.isNull()) {
+        return &firstElement;
+    } else {
+        return firstElement.left_->head();
+    }
+}
+
+template <typename T>
+typename btree<T>::Element* btree<T>::BTree::tail() const {
+    typename btree<T>::Element& firstElement = **Elements_.rbegin();
+    if (firstElement.right_.isNull()) {
+        return &firstElement;
+    } else {
+        return firstElement.right_->tail();
+    }
+}
+
+template <typename T>
+void btree<T>::BTree::outputBF(vector<string>& strs, size_t level) const {
+    // Add the Elements at this level
+    ostringstream oss(ostringstream::in);
+    for (Elements_iterator_type it = Elements_.begin(); it != Elements_.end(); ++it) {
+        if (it != Elements_.begin())
+            oss << ' ';
+        oss << *it;        
+    }
+
+    if (strs.size() < level)
+        strs.push_back(oss.str());
+    else 
+        strs.at(level - 1) += ' ' + oss.str();
+    
+    // Add Elements to lower levels
+    if (!(*Elements_.begin())->left_.isNull()) {
+        (*Elements_.begin())->left_->outputBF(strs, level + 1);
+    }
+    for (Elements_iterator_type it = Elements_.begin(); it != Elements_.end(); ++it) {
+        if (!(*it)->right_.isNull()) {
+            (*it)->right_->outputBF(strs, level + 1);
+        }
+    }
+}
+
+template <typename T>
+typename btree<T>::BTree* btree<T>::BTree::clone() const {
+    BTree* newTree = new BTree(ElementMaximum_); // clone of this tree
+    BTree* leftTree; // new tree on bottom left
+    BTree* rightTree;
+    
+    // initalize bottom left Tree
+    if (!(*Elements_.begin())->left_.isNull()) {
+        leftTree = (*Elements_.begin())->left_->clone();
+    } else {
+        leftTree = Constant::null;
+    }
+
+    for (Elements_iterator_type it = Elements_.begin(); it != Elements_.end(); ++it) {
+        // new Element
+        Element* newN = new Element((*it)->elem);
+        ElementPtr newElement(newN);
+        // new bottom right tree
+        if (!(*it)->right_.isNull()) {
+            rightTree = (*it)->right_->clone();
+            rightTree->top_left_ = newElement;
+        } else {
+            rightTree = Constant::null;
+        }
+
+        if (leftTree != Constant::null)
+            leftTree->top_right_ = newElement;
+
+        // update pointers in new Element
+        newElement->owner_ = treePtr(newTree);
+        newElement->left_ = treePtr(leftTree);
+        newElement->right_= treePtr(rightTree);
+
+        // insert Element
+        newTree->Elements_.insert(newElement);
+
+        // update leftTree for next Element
+        leftTree = rightTree;
+    }
+
+    return newTree;
+
+}

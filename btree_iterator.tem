@@ -1,0 +1,66 @@
+/*
+*** 
+ */
+
+#include <cassert>
+
+template <typename T>
+btree_const_iterator<T>& btree_const_iterator<T>::operator++() {
+    //null assertion
+    assert(treePointee != Constant::null);
+
+	//checking the subtree on the right
+    if (!treePointee->right_.isNull()) {
+        treePointee = treePointee->right_->head();
+    } else {
+        treePointee = treePointee->findNextUp();
+    }
+
+    return *this;
+}
+
+template <typename T>
+btree_iterator<T>& btree_iterator<T>::operator++() {
+    //null assertion
+   assert(treePointee != Constant::null);
+
+	//checking the subtree on the right
+    if (!treePointee->right_.isNull()) {
+        treePointee = treePointee->right_->head();
+    } else {
+    	//go up a level
+        treePointee = treePointee->findNextUp();
+    }
+
+    return *this;
+}
+template <typename T>
+btree_const_iterator<T>& btree_const_iterator<T>::operator--() {
+    if (treePointee == Constant::null) {
+        treePointee = this->btree_->tail();
+        //checking subtree on the left
+    } else if (!treePointee->left_.isNull()) {
+        treePointee = treePointee->left_->tail();
+    } else {
+    	//go up a level
+        treePointee = treePointee->findPrevUp();
+    }
+
+    return *this;
+}
+
+
+template <typename T>
+btree_iterator<T>& btree_iterator<T>::operator--() {
+    if (treePointee == Constant::null) {
+        treePointee = this->btree_->tail();
+        //checking subtree on the left
+    } else if (!treePointee->left_.isNull()) {
+        treePointee = treePointee->left_->tail();
+    } else { // go up 
+        treePointee = treePointee->findPrevUp();
+    }
+
+    return *this;
+}
+
